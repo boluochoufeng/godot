@@ -115,9 +115,15 @@ void EditorAssistantPlugin::_populate_mcp_popup(PopupMenu *p_popup) {
 	p_popup->add_item(TTR("Status: Starting..."), MENU_STATUS_HEADER);
 	p_popup->set_item_disabled(p_popup->get_item_index(MENU_STATUS_HEADER), true);
 	p_popup->add_separator();
+	p_popup->add_item(TTR("Configure Antigravity (~/.gemini/config/mcp_config.json)"), MENU_CONFIGURE_ANTIGRAVITY);
+	p_popup->add_item(TTR("Configure Codex Desktop (~/.codex/config.toml)"), MENU_CONFIGURE_CODEX);
+	p_popup->add_item(TTR("Configure DeepSeek Harness (~/.dsh/cordis.patch.yml)"), MENU_CONFIGURE_DEEPSEEK_HARNESS);
+	p_popup->add_separator();
 	p_popup->add_item(TTR("Configure Cursor (.cursor/mcp.json)"), MENU_CONFIGURE_CURSOR);
 	p_popup->add_item(TTR("Configure Claude Desktop"), MENU_CONFIGURE_CLAUDE_DESKTOP);
+	p_popup->add_separator();
 	p_popup->add_item(TTR("Copy MCP Config JSON"), MENU_COPY_CONFIG_JSON);
+	p_popup->add_item(TTR("Copy MCP Endpoint URL"), MENU_COPY_ENDPOINT_URL);
 	p_popup->add_separator();
 	p_popup->add_item(TTR("Restart MCP Server"), MENU_RESTART_MCP_SERVER);
 	p_popup->connect(SceneStringName(id_pressed), callable_mp(this, &EditorAssistantPlugin::_on_tools_menu_id_pressed));
@@ -144,10 +150,66 @@ void EditorAssistantPlugin::_update_mcp_ui_state() {
 	if (toolbar_menu_button) {
 		toolbar_menu_button->set_text(running ? vformat("MCP :%d", mcp_server->get_active_port()) : TTR("MCP: Off"));
 		toolbar_menu_button->set_tooltip_text(running
-						? vformat(TTR("AI Assistant MCP Server: Running\nEndpoint: %s (%d tools)\nClick to configure Cursor / Claude Desktop or copy config."), mcp_server->get_endpoint_url(), tool_count)
+						? vformat(TTR("AI Assistant MCP Server: Running\nEndpoint: %s (%d tools)\nClick to configure Antigravity / Codex Desktop / DeepSeek Harness or copy config."), mcp_server->get_endpoint_url(), tool_count)
 						: TTR("AI Assistant MCP Server is stopped. Click to restart or copy config."));
 		if (toolbar_menu_button->is_inside_tree()) {
 			toolbar_menu_button->set_button_icon(toolbar_menu_button->get_editor_theme_icon(running ? SNAME("StatusSuccess") : SNAME("StatusWarning")));
+		}
+	}
+}
+
+static Error _dispatch_mcp_export(const String &p_target, const String &p_host, int p_port, String &r_written_path, String &r_error_msg) {
+	if (p_target == "antigravity") {
+		return MCPConfigExporter::export_antigravity_config(p_host, p_port, r_written_path, r_error_msg);
+	}
+	if (p_target == "codex") {
+		return MCPConfigExporter::export_codex_config(p_host, p_port, r_written_path, r_error_msg);
+	}
+	if (p_target == "deepseek-harness" || p_target == "dsh") {
+		return MCPConfigExporter::export_deepseek_harness_config(p_host, p_port, r_written_path, r_error_msg);
+	}
+	if (p_target == "cursor") {
+		String project_dir = ProjectSettings::get_singleton()->get_resource_path();
+		return MCPConfigExporter::export_cursor_config(project_dir, p_host, p_port, r_written_path, r_error_msg);
+	}
+	if (p_target == "claude-desktop") {
+		return MCPConfigExporter::export_claude_desktop_config(p_host, p_port, r_written_path, r_error_msg);
+	}
+	r_error_msg = "Unknown --mcp-export target: " + p_target;
+	return ERR_INVALID_PARAMETER;
+}
+
+void EditorAssistantPlugin::_run_cmdline_exports() {
+	if (mcp_server.is_null() || !mcp_server->is_running()) {
+		return;
+	}
+
+	Vector<String> targets;
+	const List<String> user_args = OS::get_singleton()->get_cmdline_user_args();
+	for (const List<String>::Element *E = user_args.front(); E; E = E->next()) {
+		const String &arg = E->get();
+		if (arg == "--mcp-export" && E->next()) {
+			targets.push_back(E->next()->get().strip_edges().to_lower());
+		} else if (arg.begins_with("--mcp-export=")) {
+			targets.push_back(arg.get_slicec('=', 1).strip_edges().to_lower());
+		}
+	}
+
+	if (targets.is_empty()) {
+		return;
+	}
+
+	const String active_host = mcp_server->get_bind_host();
+	const int active_port = mcp_server->get_active_port();
+
+	for (const String &target : targets) {
+		String written_path;
+		String err_msg;
+		Error err = _dispatch_mcp_export(target, active_host, active_port, written_path, err_msg);
+		if (err == OK) {
+			_log_info(vformat("--- Exported %s MCP config: %s ---", target, written_path));
+		} else {
+			ERR_PRINT(vformat("EditorAssistant: Failed to export %s MCP config: %s", target, err_msg));
 		}
 	}
 }
@@ -202,42 +264,35 @@ void EditorAssistantPlugin::_on_tools_menu_id_pressed(int p_id) {
 	String active_host = mcp_server->is_running() ? mcp_server->get_bind_host() : mcp_host;
 	int active_port = mcp_server->is_running() ? mcp_server->get_active_port() : configured_port;
 
-	switch (p_id) {
-		case MENU_CONFIGURE_CURSOR: {
-			if (!mcp_server->is_running()) {
-				_toast(TTR("MCP server is not running. Enable or restart it first."), true);
-				return;
-			}
-			String project_dir = ProjectSettings::get_singleton()->get_resource_path();
-			String written_path;
-			String err_msg;
-			Error err = MCPConfigExporter::export_cursor_config(project_dir, active_host, active_port, written_path, err_msg);
-			if (err == OK) {
-				String msg = vformat(TTR("Cursor MCP config updated: %s"), written_path);
-				_log_info("--- " + msg + " ---");
-				_toast(msg);
-			} else {
-				_log_info("--- Failed to export Cursor MCP config: " + err_msg + " ---");
-				_toast(err_msg, true);
-			}
-		} break;
+	String export_target;
+	String success_fmt;
+	String fail_label;
 
+	switch (p_id) {
+		case MENU_CONFIGURE_ANTIGRAVITY: {
+			export_target = "antigravity";
+			success_fmt = TTR("Antigravity MCP config updated (reload MCP Servers or open a new session): %s");
+			fail_label = "Antigravity";
+		} break;
+		case MENU_CONFIGURE_CODEX: {
+			export_target = "codex";
+			success_fmt = TTR("Codex MCP config updated (open a new chat or restart Codex Desktop): %s");
+			fail_label = "Codex";
+		} break;
+		case MENU_CONFIGURE_DEEPSEEK_HARNESS: {
+			export_target = "deepseek-harness";
+			success_fmt = TTR("DeepSeek Harness MCP config updated (restart dsh to apply): %s");
+			fail_label = "DeepSeek Harness";
+		} break;
+		case MENU_CONFIGURE_CURSOR: {
+			export_target = "cursor";
+			success_fmt = TTR("Cursor MCP config updated: %s");
+			fail_label = "Cursor";
+		} break;
 		case MENU_CONFIGURE_CLAUDE_DESKTOP: {
-			if (!mcp_server->is_running()) {
-				_toast(TTR("MCP server is not running. Enable or restart it first."), true);
-				return;
-			}
-			String written_path;
-			String err_msg;
-			Error err = MCPConfigExporter::export_claude_desktop_config(active_host, active_port, written_path, err_msg);
-			if (err == OK) {
-				String msg = vformat(TTR("Claude Desktop MCP config updated (restart Claude Desktop to apply): %s"), written_path);
-				_log_info("--- " + msg + " ---");
-				_toast(msg);
-			} else {
-				_log_info("--- Failed to export Claude Desktop MCP config: " + err_msg + " ---");
-				_toast(err_msg, true);
-			}
+			export_target = "claude-desktop";
+			success_fmt = TTR("Claude Desktop MCP config updated (restart Claude Desktop to apply): %s");
+			fail_label = "Claude Desktop";
 		} break;
 
 		case MENU_COPY_CONFIG_JSON: {
@@ -246,7 +301,17 @@ void EditorAssistantPlugin::_on_tools_menu_id_pressed(int p_id) {
 				DisplayServer::get_singleton()->clipboard_set(snippet);
 				_toast(vformat(TTR("Copied MCP JSON config (%s) to clipboard."), MCPConfigExporter::build_mcp_url(active_host, active_port)));
 			}
-		} break;
+			return;
+		}
+
+		case MENU_COPY_ENDPOINT_URL: {
+			String url = MCPConfigExporter::build_mcp_url(active_host, active_port);
+			if (DisplayServer::get_singleton()) {
+				DisplayServer::get_singleton()->clipboard_set(url);
+				_toast(vformat(TTR("Copied MCP endpoint URL: %s"), url));
+			}
+			return;
+		}
 
 		case MENU_RESTART_MCP_SERVER: {
 			_stop_mcp_server();
@@ -256,7 +321,28 @@ void EditorAssistantPlugin::_on_tools_menu_id_pressed(int p_id) {
 			} else {
 				_toast(TTR("Failed to start AI Assistant MCP server. Check Output log."), true);
 			}
-		} break;
+			return;
+		}
+
+		default:
+			return;
+	}
+
+	if (!mcp_server->is_running()) {
+		_toast(TTR("MCP server is not running. Enable or restart it first."), true);
+		return;
+	}
+
+	String written_path;
+	String err_msg;
+	Error err = _dispatch_mcp_export(export_target, active_host, active_port, written_path, err_msg);
+	if (err == OK) {
+		String msg = vformat(success_fmt, written_path);
+		_log_info("--- " + msg + " ---");
+		_toast(msg);
+	} else {
+		_log_info(vformat("--- Failed to export %s MCP config: %s ---", fail_label, err_msg));
+		_toast(err_msg, true);
 	}
 }
 
@@ -311,6 +397,7 @@ void EditorAssistantPlugin::_notification(int p_what) {
 			if (!start_attempted && EditorNode::get_singleton() && EditorNode::get_singleton()->is_editor_ready()) {
 				start_attempted = true;
 				_start_mcp_server();
+				_run_cmdline_exports();
 			}
 			if (mcp_server.is_valid() && mcp_server->is_running()) {
 				mcp_server->poll();

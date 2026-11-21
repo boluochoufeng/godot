@@ -390,7 +390,7 @@ void EditorMCPServer::_process_http_request(ClientConn &r_conn, const String &p_
 		return;
 	}
 
-	if (r_conn.path == "/mcp" || r_conn.path == "/") {
+	if (r_conn.path == "/mcp" || r_conn.path == "/mcp/" || r_conn.path == "/") {
 		if (r_conn.method == "GET") {
 			cors_headers += "Allow: POST, DELETE, OPTIONS\r\n";
 			_queue_http_response(r_conn, 405, "Method Not Allowed", "application/json", "{\"error\":\"SSE stream not offered on GET /mcp; use POST /mcp.\"}", cors_headers);
@@ -447,7 +447,7 @@ Variant EditorMCPServer::_handle_single_rpc(const Dictionary &p_req) {
 	if (method == "initialize") {
 		String requested_version = params.get("protocolVersion", "2025-03-26");
 		String negotiated_version = "2025-03-26";
-		if (requested_version == "2024-11-05" || requested_version == "2025-03-26" || requested_version == "2025-06-18") {
+		if (requested_version == "2024-11-05" || requested_version == "2025-03-26" || requested_version == "2025-06-18" || requested_version == "2025-11-25") {
 			negotiated_version = requested_version;
 		}
 

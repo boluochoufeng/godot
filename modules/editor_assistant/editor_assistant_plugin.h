@@ -43,10 +43,14 @@ class EditorAssistantPlugin : public EditorPlugin {
 	GDCLASS(EditorAssistantPlugin, EditorPlugin);
 
 	enum ToolsMenuId {
-		MENU_CONFIGURE_CURSOR = 0,
-		MENU_CONFIGURE_CLAUDE_DESKTOP = 1,
-		MENU_COPY_CONFIG_JSON = 2,
-		MENU_RESTART_MCP_SERVER = 3,
+		MENU_CONFIGURE_ANTIGRAVITY = 0,
+		MENU_CONFIGURE_CODEX = 1,
+		MENU_CONFIGURE_DEEPSEEK_HARNESS = 2,
+		MENU_CONFIGURE_CURSOR = 3,
+		MENU_CONFIGURE_CLAUDE_DESKTOP = 4,
+		MENU_COPY_CONFIG_JSON = 5,
+		MENU_COPY_ENDPOINT_URL = 6,
+		MENU_RESTART_MCP_SERVER = 7,
 		MENU_STATUS_HEADER = 100,
 	};
 
@@ -67,6 +71,7 @@ class EditorAssistantPlugin : public EditorPlugin {
 
 	void _register_settings();
 	int _get_cmdline_port_override() const;
+	void _run_cmdline_exports();
 	void _start_mcp_server();
 	void _stop_mcp_server();
 	void _populate_mcp_popup(PopupMenu *p_popup);

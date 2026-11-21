@@ -172,6 +172,41 @@ TEST_CASE("[EditorAssistant][MCP] Non-Destructive Config Export Merge") {
 	Array win_args = claude_win["args"];
 	CHECK(String(win_args[0]) == "/c");
 	CHECK(String(win_args[1]) == "npx");
+
+	// Codex TOML merge: preserves trailing backslash literal paths, multi-line arrays, sibling MCP tables, and updates idempotently.
+	const String codex_existing = "model = \"gpt-6\"\n\n[marketplaces.openai-bundled]\nsource = '\\\\?\\C:\\Users\\test\\'\n\n[mcp_servers.\"godot-ai\"]\ncommand = \"uvx\"\nargs = [\n  \"--port\",\n  \"8000\",\n]\nenabled = true\n";
+	String codex_first = MCPConfigExporter::merge_codex_config_toml(codex_existing, "godot-editor", "http://127.0.0.1:6550/mcp");
+	CHECK(codex_first.contains("source = '\\\\?\\C:\\Users\\test\\'"));
+	CHECK(codex_first.contains("[mcp_servers.\"godot-ai\"]"));
+	CHECK(codex_first.contains("[mcp_servers.\"godot-editor\"]"));
+	CHECK(codex_first.contains("url = \"http://127.0.0.1:6550/mcp\""));
+
+	String codex_second = MCPConfigExporter::merge_codex_config_toml(codex_first, "godot-editor", "http://127.0.0.1:16551/mcp");
+	CHECK(codex_second.contains("url = \"http://127.0.0.1:16551/mcp\""));
+	CHECK_FALSE(codex_second.contains("127.0.0.1:6550"));
+	CHECK(codex_second.count("[mcp_servers.\"godot-editor\"]") == 1);
+
+	// DeepSeek Harness YAML merge: handles comment + [] file, sibling insert items, and idempotent updates.
+	const String dsh_empty_arr = "# comment header\n[]\n";
+	String dsh_from_empty = MCPConfigExporter::merge_deepseek_harness_patch_yaml(dsh_empty_arr, "godot-editor", "http://127.0.0.1:6550/mcp", err, err_msg);
+	CHECK(err == OK);
+	CHECK(dsh_from_empty.contains("# comment header"));
+	CHECK_FALSE(dsh_from_empty.contains("\n[]\n"));
+	CHECK(dsh_from_empty.contains("- id: mcp-godot-editor"));
+	CHECK(dsh_from_empty.contains("transport: streamable-http"));
+
+	const String dsh_with_sibling = "- insert:\n    - id: mcp-godot-ai\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: godot-ai\n        transport: stdio\n";
+	String dsh_first = MCPConfigExporter::merge_deepseek_harness_patch_yaml(dsh_with_sibling, "godot-editor", "http://127.0.0.1:6550/mcp", err, err_msg);
+	CHECK(err == OK);
+	CHECK(dsh_first.contains("id: mcp-godot-ai"));
+	CHECK(dsh_first.contains("id: mcp-godot-editor"));
+
+	String dsh_second = MCPConfigExporter::merge_deepseek_harness_patch_yaml(dsh_first, "godot-editor", "http://127.0.0.1:16551/mcp", err, err_msg);
+	CHECK(err == OK);
+	CHECK(dsh_second.contains("id: mcp-godot-ai"));
+	CHECK(dsh_second.contains("url: http://127.0.0.1:16551/mcp"));
+	CHECK_FALSE(dsh_second.contains("127.0.0.1:6550"));
+	CHECK(dsh_second.count("id: mcp-godot-editor") == 1);
 }
 
 } // namespace TestEditorAssistantMCP

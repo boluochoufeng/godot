@@ -36,18 +36,27 @@
 
 class MCPConfigExporter {
 public:
+	static String get_user_home_dir();
 	static String build_mcp_url(const String &p_host, int p_port);
 
 	static Dictionary build_cursor_server_entry(const String &p_url);
 	static Dictionary build_claude_desktop_server_entry(const String &p_url, bool p_is_windows);
 
 	static String merge_mcp_servers_json(const String &p_existing_json, const String &p_server_name, const Dictionary &p_server_entry, Error &r_err, String &r_error_msg);
+	static String merge_codex_config_toml(const String &p_existing_toml, const String &p_server_name, const String &p_url);
+	static String merge_deepseek_harness_patch_yaml(const String &p_existing_yaml, const String &p_server_name, const String &p_url, Error &r_err, String &r_error_msg);
 
 	static String get_cursor_config_path(const String &p_project_dir);
 	static String get_claude_desktop_config_path();
+	static String get_antigravity_config_path();
+	static String get_codex_config_path();
+	static String get_deepseek_harness_config_path();
 
 	static Error export_cursor_config(const String &p_project_dir, const String &p_host, int p_port, String &r_written_path, String &r_error_msg);
 	static Error export_claude_desktop_config(const String &p_host, int p_port, String &r_written_path, String &r_error_msg);
+	static Error export_antigravity_config(const String &p_host, int p_port, String &r_written_path, String &r_error_msg);
+	static Error export_codex_config(const String &p_host, int p_port, String &r_written_path, String &r_error_msg);
+	static Error export_deepseek_harness_config(const String &p_host, int p_port, String &r_written_path, String &r_error_msg);
 
 	static String format_clipboard_snippet(const String &p_host, int p_port);
 };
